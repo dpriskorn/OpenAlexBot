@@ -12,7 +12,7 @@ from wikibaseintegrator.models import LanguageValue
 from wikibaseintegrator.wbi_helpers import search_entities
 
 import config
-from openalexbot.enums import StatedIn
+from openalexbot.enums import StatedIn, Property
 
 logging.basicConfig(level=config.loglevel)
 logger = logging.getLogger(__name__)
@@ -24,12 +24,12 @@ class OpenAlexBot(BaseModel):
     filename: str
     dois: Optional[Set]
 
-    def __import_new_item__(self, work: Work, wbi: WikibaseIntegrator):
+    def __import_new_item__(self, doi: str, work: Work, wbi: WikibaseIntegrator):
         # TODO language of display name using langdetect and set dynamically
-        item = wbi.item.new(labels=LanguageValue(language="en", value=work.display_name),
-                            descriptions=LanguageValue(
-                                language="en",
-                                value=f"scientific article from {work.publication_year}"))
+        item = wbi.item.new()
+        item.labels.set("en", work.display_name)
+        item.descriptions.set("en", f"scientific article from {work.publication_year}")
+        # Prepare reference
         retrieved_date = datatypes.Time(
             prop_nr="P813",  # Fetched today
             time=datetime.utcnow().replace(
@@ -48,14 +48,31 @@ class OpenAlexBot(BaseModel):
             retrieved_date,
             stated_in
         ]
-        title = datatypes.MonolingualText(
+        # Prepare claims
+        title_claim = datatypes.MonolingualText(
+            prop_nr=Property.TITLE.value,
             text=work.title,
-            language="en"
+            language="en",
+            references=[reference]
+        )
+        doi_claim = datatypes.ExternalID(
+            prop_nr=Property.DOI.value,
+            value=doi,
+            references=[reference]
         )
         # TODO convert more data from OpenAlex work to claims
-        item.add_claims(list(
-            title
-        ))
+        item.add_claims(
+            [
+                title_claim,
+                doi_claim
+            ],
+            # This means that if the value already exist we will update it.
+            # action_if_exists=ActionIfExists.APPEND
+        )
+        if config.loglevel == logging.DEBUG:
+            print(item.get_json())
+            print("debug exit before write")
+            exit()
         new_item = item.write(summary="New item imported from OpenAlex")
         print(f"Added new item {self.entity_url(new_item.id)}")
 
@@ -81,13 +98,13 @@ class OpenAlexBot(BaseModel):
                     logger.info(f"result from CirrusSearch: {result}")
                     # exit()
                     if len(result) == 0:
-                        self.__import_new_item__(work=work, wbi=wbi)
+                        self.__import_new_item__(doi=doi, work=work, wbi=wbi)
                     processed_dois.add(doi)
         else:
             print("No DOIs found in the CSV")
 
     def entity_url(self, qid):
-        return f"{wbi_config.config['WIKIBASE_URL']}wiki/{qid}"
+        return f"{wbi_config.config['WIKIBASE_URL']}/wiki/{qid}"
 
     def start(self):
         self.__read_csv__()
