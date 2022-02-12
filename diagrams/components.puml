@@ -1,0 +1,18 @@
+@startuml
+'https://plantuml.com/component-diagram
+
+[openalexbot] --> [openalexapi]
+[openalexbot] --> [wikibaseintegrator]
+
+cloud {
+  interface "HTTP API" as httpoa
+  [OpenAlex] - httpoa
+  [openalexapi] -- httpoa
+}
+cloud {
+  interface "HTTP API" as httpwd
+  [Wikidata] - httpwd
+  [wikibaseintegrator] -- httpwd
+}
+
+@enduml

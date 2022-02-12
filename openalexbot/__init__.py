@@ -1,0 +1,2 @@
+class OpenAlexBot(BaseModel):
+    pass
