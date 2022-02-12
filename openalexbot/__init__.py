@@ -23,6 +23,28 @@ class OpenAlexBot(BaseModel):
     filename: str
     dois: Optional[Set]
 
+    def __found_using_cirrussearch__(self, doi: str) -> bool:
+        # Lookup using CirrusSearch
+        result = mediawiki_api_call_helper(
+            mediawiki_api_url=f"https://www.wikidata.org/w/api.php?format=json&action=query&"
+                              f"list=search&srprop=&srlimit=10&srsearch={doi}",
+            allow_anonymous=True
+        )
+        # logger.info(f"result from CirrusSearch: {result}")
+        if config.loglevel == logging.DEBUG:
+            print(result)
+        if "query" in result:
+            query = result["query"]
+            if "search" in query:
+                search = query["search"]
+                if len(search) > 0:
+                    # Found 1 match!
+                    # qid = search[0]["title"]
+                    return True
+                    # exit()
+                else:
+                    return False
+
     def __import_new_item__(self, doi: str, work: Work, wbi: WikibaseIntegrator):
         # TODO language of display name using langdetect and set dynamically
         item = wbi.item.new()
@@ -99,27 +121,11 @@ class OpenAlexBot(BaseModel):
                 if doi not in processed_dois:
                     work = oa.get_single_work(f"doi:{doi}")
                     #print(work.dict())
-                    # Lookup using CirrusSearch
-                    result = mediawiki_api_call_helper(
-                        mediawiki_api_url=f"https://www.wikidata.org/w/api.php?format=json&action=query&"
-                                          f"list=search&srprop=&srlimit=10&srsearch={doi}",
-                        allow_anonymous=True
-                    )
-                    # logger.info(f"result from CirrusSearch: {result}")
-                    if config.loglevel == logging.DEBUG:
-                        print(result)
-                    if "query" in result:
-                        query = result["query"]
-                        if "search" in query:
-                            search = query["search"]
-                            if len(search) > 0:
-                                # Found 1 match!
-                                # qid = search[0]["title"]
-                                print(f"DOI: '{doi}' is already in Wikidata, skipping")
-                                # exit()
-                            else:
-                                self.__import_new_item__(doi=doi, work=work, wbi=wbi)
-                    processed_dois.add(doi)
+                    if not self.__found_using_cirrussearch__(doi):
+                        self.__import_new_item__(doi=doi, work=work, wbi=wbi)
+                    else:
+                        print(f"DOI: '{doi}' is already in Wikidata, skipping")
+                processed_dois.add(doi)
         else:
             print("No DOIs found in the CSV")
 
