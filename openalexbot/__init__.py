@@ -49,22 +49,28 @@ class OpenAlexBot(BaseModel):
             stated_in
         ]
         # Prepare claims
-        title_claim = datatypes.MonolingualText(
+        title = datatypes.MonolingualText(
             prop_nr=Property.TITLE.value,
             text=work.title,
             language="en",
             references=[reference]
         )
-        doi_claim = datatypes.ExternalID(
+        doi = datatypes.ExternalID(
             prop_nr=Property.DOI.value,
             value=doi,
             references=[reference]
         )
+        instance_of = datatypes.Item(
+            prop_nr=Property.INSTANCE_OF.value,
+            # TODO make this dynamic according to work.type
+            value="Q13442814"  # hardcoded scholarly article for now
+        )
         # TODO convert more data from OpenAlex work to claims
         item.add_claims(
             [
-                title_claim,
-                doi_claim
+                title,
+                doi,
+                instance_of
             ],
             # This means that if the value already exist we will update it.
             # action_if_exists=ActionIfExists.APPEND
@@ -99,6 +105,8 @@ class OpenAlexBot(BaseModel):
                     # exit()
                     if len(result) == 0:
                         self.__import_new_item__(doi=doi, work=work, wbi=wbi)
+                    else:
+                        print(f"DOI: {doi} is already in Wikidata, skipping")
                     processed_dois.add(doi)
         else:
             print("No DOIs found in the CSV")
