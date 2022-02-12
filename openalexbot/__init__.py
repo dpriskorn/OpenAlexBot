@@ -4,7 +4,7 @@ import pandas as pd
 from openalexapi import OpenAlex
 from pydantic import BaseModel
 from rich import print
-from wikibaseintegrator import WikibaseIntegrator, wbi_config
+from wikibaseintegrator import WikibaseIntegrator, wbi_config, wbi_login
 from wikibaseintegrator.models import LanguageValue
 from wikibaseintegrator.wbi_helpers import search_entities
 
@@ -26,7 +26,10 @@ class OpenAlexBot(BaseModel):
         processed_dois = set()
         oa = OpenAlex()
         wbi_config.config["USER_AGENT_DEFAULT"] = config.user_agent
-        wbi = WikibaseIntegrator(login=None)
+        wbi = WikibaseIntegrator(login=wbi_login.Login(
+                        user=config.bot_username,
+                        password=config.password
+                    ))
         for doi in dois:
             if doi not in processed_dois:
                 work = oa.get_single_work(f"doi:{doi}")
@@ -42,5 +45,9 @@ class OpenAlexBot(BaseModel):
                                             language="en",
                                             value=f"scientific article from {work.publication_year}"))
                     # TODO convert data from OpenAlex work to claims
-                    #item.add_claims(None)
-                    item.write(summary="New item imported from OpenAlex")
+                    # item.add_claims(None)
+                    new_item = item.write(summary="New item imported from OpenAlex")
+                    print(f"Added new item {self.entity_url(new_item.id)}")
+
+    def entity_url(self, qid):
+        return f"{wbi_config.config['WIKIBASE_URL']}wiki/{qid}"
