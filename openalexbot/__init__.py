@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import Set, Optional
 
 import pandas as pd
@@ -6,10 +7,12 @@ from openalexapi import OpenAlex, Work
 from pydantic import BaseModel
 from rich import print
 from wikibaseintegrator import WikibaseIntegrator, wbi_config, wbi_login
+from wikibaseintegrator import datatypes
 from wikibaseintegrator.models import LanguageValue
 from wikibaseintegrator.wbi_helpers import search_entities
 
 import config
+from openalexbot.enums import StatedIn
 
 logging.basicConfig(level=config.loglevel)
 logger = logging.getLogger(__name__)
@@ -27,9 +30,32 @@ class OpenAlexBot(BaseModel):
                             descriptions=LanguageValue(
                                 language="en",
                                 value=f"scientific article from {work.publication_year}"))
-
-        # TODO convert data from OpenAlex work to claims
-        # item.add_claims(None)
+        retrieved_date = datatypes.Time(
+            prop_nr="P813",  # Fetched today
+            time=datetime.utcnow().replace(
+                tzinfo=timezone.utc
+            ).replace(
+                hour=0,
+                minute=0,
+                second=0,
+            ).strftime("+%Y-%m-%dT%H:%M:%SZ")
+        )
+        stated_in = datatypes.Item(
+            prop_nr="P248",
+            value=StatedIn.OPENALEX.value
+        )
+        reference = [
+            retrieved_date,
+            stated_in
+        ]
+        title = datatypes.MonolingualText(
+            text=work.title,
+            language="en"
+        )
+        # TODO convert more data from OpenAlex work to claims
+        item.add_claims(list(
+            title
+        ))
         new_item = item.write(summary="New item imported from OpenAlex")
         print(f"Added new item {self.entity_url(new_item.id)}")
 
