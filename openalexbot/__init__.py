@@ -8,8 +8,7 @@ from pydantic import BaseModel
 from rich import print
 from wikibaseintegrator import WikibaseIntegrator, wbi_config, wbi_login
 from wikibaseintegrator import datatypes
-from wikibaseintegrator.models import LanguageValue
-from wikibaseintegrator.wbi_helpers import search_entities
+from wikibaseintegrator.wbi_helpers import mediawiki_api_call_helper
 
 import config
 from openalexbot.enums import StatedIn, Property
@@ -99,14 +98,27 @@ class OpenAlexBot(BaseModel):
             for doi in self.dois:
                 if doi not in processed_dois:
                     work = oa.get_single_work(f"doi:{doi}")
-                    print(work.dict())
-                    result = search_entities(doi)
-                    logger.info(f"result from CirrusSearch: {result}")
-                    # exit()
-                    if len(result) == 0:
-                        self.__import_new_item__(doi=doi, work=work, wbi=wbi)
-                    else:
-                        print(f"DOI: {doi} is already in Wikidata, skipping")
+                    #print(work.dict())
+                    # Lookup using CirrusSearch
+                    result = mediawiki_api_call_helper(
+                        mediawiki_api_url=f"https://www.wikidata.org/w/api.php?format=json&action=query&"
+                                          f"list=search&srprop=&srlimit=10&srsearch={doi}",
+                        allow_anonymous=True
+                    )
+                    # logger.info(f"result from CirrusSearch: {result}")
+                    if config.loglevel == logging.DEBUG:
+                        print(result)
+                    if "query" in result:
+                        query = result["query"]
+                        if "search" in query:
+                            search = query["search"]
+                            if len(search) > 0:
+                                # Found 1 match!
+                                # qid = search[0]["title"]
+                                print(f"DOI: '{doi}' is already in Wikidata, skipping")
+                                # exit()
+                            else:
+                                self.__import_new_item__(doi=doi, work=work, wbi=wbi)
                     processed_dois.add(doi)
         else:
             print("No DOIs found in the CSV")
