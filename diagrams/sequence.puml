@@ -1,0 +1,20 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+autonumber
+Actor User
+User -> OpenAlexBot: Start bot with a file containing DOIs
+loop "for each file"
+    OpenAlexBot -> OpenAlex: Lookup DOI
+    OpenAlex -> OpenAlexBot: Response
+    alt "DOI found"
+        OpenAlexBot -> Wikidata: Check if item already exists
+        Wikidata -> OpenAlexBot: Response
+        alt "Item missing"
+            OpenAlexBot -> Wikidata: Create new item
+            Wikidata -> OpenAlexBot: Response
+        end
+    end
+end
+
+@enduml
