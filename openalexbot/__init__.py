@@ -6,7 +6,7 @@ import pandas as pd
 from openalexapi import OpenAlex, Work
 from pydantic import BaseModel
 from rich import print
-from wikibaseintegrator import WikibaseIntegrator, wbi_config, wbi_login
+from wikibaseintegrator import WikibaseIntegrator, wbi_config, wbi_login, entities
 from wikibaseintegrator import datatypes
 from wikibaseintegrator.wbi_helpers import mediawiki_api_call_helper
 
@@ -45,7 +45,14 @@ class OpenAlexBot(BaseModel):
                 else:
                     return False
 
-    def __import_new_item__(self, doi: str, work: Work, wbi: WikibaseIntegrator):
+    def __import_new_item__(
+            self, doi: str, work: Work, wbi: WikibaseIntegrator
+    ):
+        self.__upload_new_item__(item=self.__prepare_new_item__(doi=doi, work=work, wbi=wbi))
+
+    def __prepare_new_item__(
+            self, doi: str, work: Work, wbi: WikibaseIntegrator
+    ) -> entities.Item:
         # TODO language of display name using langdetect and set dynamically
         item = wbi.item.new()
         item.labels.set("en", work.display_name)
@@ -78,7 +85,7 @@ class OpenAlexBot(BaseModel):
         )
         doi = datatypes.ExternalID(
             prop_nr=Property.DOI.value,
-            value=doi,
+            value=doi.lower(),  # This is a community norm in Wikidata
             references=[reference]
         )
         instance_of = datatypes.Item(
@@ -100,13 +107,7 @@ class OpenAlexBot(BaseModel):
             print(item.get_json())
             print("debug exit before write")
             exit()
-        new_item = item.write(summary="New item imported from OpenAlex")
-        print(f"Added new item {self.entity_url(new_item.id)}")
-
-    def __read_csv__(self):
-        df = pd.read_csv(self.filename)
-        dois = df["DOI"].values
-        self.dois = set(dois)
+        return item
 
     def __process_dois__(self):
         if len(self.dois) > 0:
@@ -120,7 +121,7 @@ class OpenAlexBot(BaseModel):
             for doi in self.dois:
                 if doi not in processed_dois:
                     work = oa.get_single_work(f"doi:{doi}")
-                    #print(work.dict())
+                    # print(work.dict())
                     if not self.__found_using_cirrussearch__(doi):
                         self.__import_new_item__(doi=doi, work=work, wbi=wbi)
                     else:
@@ -128,6 +129,15 @@ class OpenAlexBot(BaseModel):
                 processed_dois.add(doi)
         else:
             print("No DOIs found in the CSV")
+
+    def __read_csv__(self):
+        df = pd.read_csv(self.filename)
+        dois = df["DOI"].values
+        self.dois = set(dois)
+
+    def __upload_new_item__(self, item: entities.Item):
+        new_item = item.write(summary="New item imported from OpenAlex")
+        print(f"Added new item {self.entity_url(new_item.id)}")
 
     def entity_url(self, qid):
         return f"{wbi_config.config['WIKIBASE_URL']}/wiki/{qid}"
