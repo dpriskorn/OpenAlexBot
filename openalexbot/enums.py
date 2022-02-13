@@ -1,5 +1,7 @@
 from enum import Enum
 
+from openalexapi.work import WorkType
+
 
 class Property(Enum):
     CITES_WORK = "P2860"
@@ -20,3 +22,9 @@ class Property(Enum):
 
 class StatedIn(Enum):
     OPENALEX = "Q107507571"
+
+
+class WorkTypeQid(Enum):
+    WorkType.BOOK = "Q13442814"
+    WorkType.JOURNAL_ARTICLE = "Q13442814"
+

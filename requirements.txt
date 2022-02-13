@@ -1,6 +1,6 @@
 git+git://github.com/LeMyst/WikibaseIntegrator@v0.12.0rc1#egg=wikibaseintegrator
 pydantic~=1.9.0
-openalexapi~=0.0.1a0
+git+git://github.com/dpriskorn/OpenAlexAPI@0.0.1-alpha2#egg=openalexapi
 pandas~=1.4.1
 requests~=2.27.1
 rich~=11.2.0

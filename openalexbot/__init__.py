@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from typing import Set, Optional, List
+from typing import Set, Optional, List, Union
 
 import pandas as pd
 from openalexapi import OpenAlex, Work
@@ -12,7 +12,7 @@ from wikibaseintegrator import datatypes
 from wikibaseintegrator.wbi_helpers import mediawiki_api_call_helper
 
 import config
-from openalexbot.enums import StatedIn, Property
+from openalexbot.enums import StatedIn, Property, WorkTypeQid
 
 logging.basicConfig(level=config.loglevel)
 logger = logging.getLogger(__name__)
@@ -61,6 +61,27 @@ class OpenAlexBot(BaseModel):
                 else:
                     return False
 
+    def __get_first_qid_from_cirrussearch__(self, doi: str) -> Union[str, bool]:
+        # Lookup using CirrusSearch
+        result = mediawiki_api_call_helper(
+            mediawiki_api_url=f"https://www.wikidata.org/w/api.php?format=json&action=query&"
+                              f"list=search&srprop=&srlimit=10&srsearch={doi}",
+            allow_anonymous=True
+        )
+        # logger.info(f"result from CirrusSearch: {result}")
+        if config.loglevel == logging.DEBUG:
+            print(result)
+        if "query" in result:
+            query = result["query"]
+            if "search" in query:
+                search = query["search"]
+                if len(search) > 0:
+                    # Found match!
+                    qid = search[0]["title"]
+                    return qid
+                else:
+                    return False
+
     def __import_new_item__(
             self, doi: str, work: Work, wbi: WikibaseIntegrator
     ):
@@ -106,9 +127,39 @@ class OpenAlexBot(BaseModel):
         )
         instance_of = datatypes.Item(
             prop_nr=Property.INSTANCE_OF.value,
-            # TODO make this dynamic according to work.type
-            value="Q13442814"  # hardcoded scholarly article for now
+            value=WorkTypeQid(work.type),
+            references=[reference]
         )
+        if len(work.referenced_works) > 0:
+            logger.info(f"Working on references now")
+            oa = OpenAlex()
+            cites_works: List[datatypes.Item] = []
+            for referenced_work_url in work.referenced_works:
+                referenced_work = oa.get_single_work(referenced_work_url)
+                # print(referenced_work.dict())
+                doi = referenced_work.ids.doi_id
+                if doi is not None:
+                    if self.__found_using_cirrussearch__(doi):
+                        qid = self.__get_first_qid_from_cirrussearch__(doi)
+                        cites_work = datatypes.Item(
+                            prop_nr=Property.CITES_WORK.value,
+                            value=qid,
+                            references=[reference]
+                        )
+                        cites_works.append(
+                            cites_work
+                        )
+                    else:
+                        # TODO decide whether to import transitive references also
+                        logger.warning(f"Reference DOI '{doi}' not found in Wikidata")
+                else:
+                    # TODO decide whether to import these
+                    logger.warning(f"DOI was None for OpenAlex ID {referenced_work_url} "
+                                   f"with ids {referenced_work.ids}, skipping")
+            logger.debug(f"Generated {len(cites_works)} cited works")
+            if config.loglevel == logging.DEBUG:
+                print(cites_works)
+            item.add_claims(cites_works)
         # TODO convert more data from OpenAlex work to claims
         item.add_claims(
             [
