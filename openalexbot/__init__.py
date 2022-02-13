@@ -162,7 +162,8 @@ class OpenAlexBot(BaseModel):
             logger.debug(f"Generated {len(cites_works)} cited works")
             if config.loglevel == logging.DEBUG:
                 print(cites_works)
-            item.add_claims(cites_works)
+            if len(cites_works) > 0:
+                item.add_claims(cites_works)
         # TODO convert more data from OpenAlex work to claims
         item.add_claims(
             [
@@ -199,7 +200,8 @@ class OpenAlexBot(BaseModel):
                         self.__import_new_item__(doi=doi, work=work, wbi=wbi)
                     else:
                         print(f"DOI: '{doi}' is already in Wikidata, skipping")
-                    input("press enter to continue")
+                    if config.press_enter_to_continue:
+                        input("press enter to continue")
                 else:
                     if self.__found_using_cirrussearch__(doi):
                         print(f"DOI '{doi}' found in Wikidata but not in OpenAlex")
