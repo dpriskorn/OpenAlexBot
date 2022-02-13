@@ -1,9 +1,10 @@
 import logging
 from datetime import datetime, timezone
-from typing import Set, Optional
+from typing import Set, Optional, List
 
 import pandas as pd
 from openalexapi import OpenAlex, Work
+from pandas import DataFrame
 from pydantic import BaseModel
 from rich import print
 from wikibaseintegrator import WikibaseIntegrator, wbi_config, wbi_login, entities
@@ -18,10 +19,25 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAlexBot(BaseModel):
-    """This class takes a CSV as input
-    The column "DOI" is then processed row by row"""
+    """
+    This class takes a CSV as input
+    The column "doi" is then processed row by row
+    It supports both "naked" dois and with prefix.
+    """
+    dataframe: Optional[DataFrame]
+    dois: Optional[Set[str]]
     filename: str
-    dois: Optional[Set]
+
+    def __check_and_extract_doi_column__(self):
+        if "doi" in self.dataframe.columns:
+            logger.debug("Found 'doi' column")
+            if len(self.dataframe) > 0:
+                dois: List[str] = self.dataframe["doi"].values
+                self.dois = set(dois)
+            else:
+                raise ValueError("No rows in the dataframe")
+        else:
+            raise ValueError("No 'doi' column found")
 
     def __found_using_cirrussearch__(self, doi: str) -> bool:
         # Lookup using CirrusSearch
@@ -105,43 +121,55 @@ class OpenAlexBot(BaseModel):
         )
         if config.loglevel == logging.DEBUG:
             print(item.get_json())
-            print("debug exit before write")
-            exit()
         return item
 
     def __process_dois__(self):
-        if len(self.dois) > 0:
-            oa = OpenAlex()
-            wbi_config.config["USER_AGENT_DEFAULT"] = config.user_agent
-            wbi = WikibaseIntegrator(login=wbi_login.Login(
-                user=config.bot_username,
-                password=config.password
-            ))
-            processed_dois = set()
-            for doi in self.dois:
-                if doi not in processed_dois:
-                    work = oa.get_single_work(f"doi:{doi}")
+        oa = OpenAlex()
+        wbi_config.config["USER_AGENT_DEFAULT"] = config.user_agent
+        wbi = WikibaseIntegrator(login=wbi_login.Login(
+            user=config.bot_username,
+            password=config.password
+        ))
+        processed_dois = set()
+        for doi in self.dois:
+            logger.debug(f"doi: '{doi}'")
+            doi = doi.replace("https://doi.org/", "")
+            if "http" in doi:
+                raise ValueError(f"http found in this DOI after "
+                                 f"removing the prefix: {doi}")
+            if doi not in processed_dois:
+                work = oa.get_single_work(f"doi:{doi}")
+                if work is not None:
                     # print(work.dict())
                     if not self.__found_using_cirrussearch__(doi):
                         self.__import_new_item__(doi=doi, work=work, wbi=wbi)
                     else:
                         print(f"DOI: '{doi}' is already in Wikidata, skipping")
+                    input("press enter to continue")
+                else:
+                    if self.__found_using_cirrussearch__(doi):
+                        print(f"DOI '{doi}' found in Wikidata but not in OpenAlex")
+                    else:
+                        print(f"DOI '{doi}' not found in OpenAlex and Wikidata")
                 processed_dois.add(doi)
-        else:
-            print("No DOIs found in the CSV")
 
     def __read_csv__(self):
-        df = pd.read_csv(self.filename)
-        dois = df["DOI"].values
-        self.dois = set(dois)
+        self.dataframe = pd.read_csv(self.filename)
 
     def __upload_new_item__(self, item: entities.Item):
-        new_item = item.write(summary="New item imported from OpenAlex")
-        print(f"Added new item {self.entity_url(new_item.id)}")
+        if config.upload_enabled:
+            new_item = item.write(summary="New item imported from OpenAlex")
+            print(f"Added new item {self.entity_url(new_item.id)}")
+        else:
+            print("skipped upload")
 
     def entity_url(self, qid):
         return f"{wbi_config.config['WIKIBASE_URL']}/wiki/{qid}"
 
     def start(self):
         self.__read_csv__()
+        self.__check_and_extract_doi_column__()
         self.__process_dois__()
+
+    class Config:
+        arbitrary_types_allowed = True
