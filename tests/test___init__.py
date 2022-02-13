@@ -8,26 +8,37 @@ from openalexbot import OpenAlexBot
 
 
 class TestOpenAlexBot(TestCase):
-    def test_read_csv(self):
-        oab = OpenAlexBot(filename="test.csv")
+    def test_read_csv_no_doi_column(self):
+        oab = OpenAlexBot(filename="test_data/test_doi_uppercase.csv")
         oab.__read_csv__()
+        with self.assertRaises(ValueError):
+            oab.__check_and_extract_doi_column__()
+
+    def test_read_csv_no_doi_column(self):
+        oab = OpenAlexBot(filename="test_data/test_doi_lowercase.csv")
+        oab.__read_csv__()
+        oab.__check_and_extract_doi_column__()
         if len(oab.dois) != 1:
             self.fail()
 
     def test_found_using_cirrussearch_true(self):
-        oab = OpenAlexBot(filename="test.csv")
+        oab = OpenAlexBot(filename="test_data/test_doi_lowercase.csv")
         result = oab.__found_using_cirrussearch__(doi="10.7717/peerj.4375")
         if not result:
             self.fail()
 
     def test_found_using_cirrussearch_false(self):
-        oab = OpenAlexBot(filename="test.csv")
+        oab = OpenAlexBot(filename="test_data/test_doi_lowercase.csv")
         result = oab.__found_using_cirrussearch__(doi="xxx10.7717/peerj.4375xxx")
         if result:
             self.fail()
 
+    def test_import(self):
+        oa = OpenAlexBot(filename="test_data/10_dois.csv")
+        oa.start()
+
 #     def test__prepare_new_item__(self):
-#         oab = OpenAlexBot(filename="test.csv")
+#         oab = OpenAlexBot(filename="test_data/test.csv")
 #         test_json = json.loads("""
 #
 # {
