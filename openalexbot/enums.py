@@ -22,9 +22,3 @@ class Property(Enum):
 
 class StatedIn(Enum):
     OPENALEX = "Q107507571"
-
-
-class WorkTypeQid(Enum):
-    WorkType.BOOK = "Q13442814"
-    WorkType.JOURNAL_ARTICLE = "Q13442814"
-

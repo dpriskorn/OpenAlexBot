@@ -12,7 +12,8 @@ from wikibaseintegrator import datatypes
 from wikibaseintegrator.wbi_helpers import mediawiki_api_call_helper
 
 import config
-from openalexbot.enums import StatedIn, Property, WorkTypeQid
+from openalexbot.enums import StatedIn, Property
+from openalexbot.work_type_to_qid import WorkTypeToQid
 
 logging.basicConfig(level=config.loglevel)
 logger = logging.getLogger(__name__)
@@ -125,9 +126,11 @@ class OpenAlexBot(BaseModel):
             value=doi.lower(),  # This is a community norm in Wikidata
             references=[reference]
         )
+        type_qid = WorkTypeToQid(work=work)
+        type_qid = type_qid.get_qid()
         instance_of = datatypes.Item(
             prop_nr=Property.INSTANCE_OF.value,
-            value=WorkTypeQid(work.type),
+            value=type_qid,
             references=[reference]
         )
         if len(work.referenced_works) > 0:
