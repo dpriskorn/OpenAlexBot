@@ -1,0 +1,43 @@
+@startuml
+'https://plantuml.com/class-diagram
+
+abstract class BaseModel
+
+BaseModel <|-- OpenAlexBot
+
+class OpenAlexBot {
++__dataframe__
++__dois__
++filename
++__check_and_extract_doi_column__()
++__found_using_cirrussearch__()
++__import_new_item__()
++__prepare_new_item__()
++__process_dois__()
++__read_csv__()
++__upload_new_item__()
++entity_url()
++start()
+}
+
+enum Property {
+CITES_WORK
+DOI
+INSTANCE_OF
+ISSUE
+LANGUAGE_OF_WORK
+MAIN_SUBJECT
+OPENALEX_ID
+PAGES
+PMID
+PUBLICATION_DATE
+PUBLISHED_IN
+STATED_AS
+TITLE
+VOLUME
+}
+
+enum StatedIn{
+OPENALEX
+}
+@enduml
