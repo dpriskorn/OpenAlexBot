@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from rich import print
 from wikibaseintegrator import WikibaseIntegrator, wbi_config, wbi_login, entities
 from wikibaseintegrator import datatypes
+from wikibaseintegrator.models import Claim
 from wikibaseintegrator.wbi_helpers import mediawiki_api_call_helper
 
 import config
@@ -41,6 +42,8 @@ class OpenAlexBot(BaseModel):
             raise ValueError("No 'doi' column found")
 
     def __found_using_cirrussearch__(self, doi: str) -> bool:
+        if doi is None:
+            raise ValueError("Did not get what we need")
         # Lookup using CirrusSearch
         result = mediawiki_api_call_helper(
             mediawiki_api_url=f"https://www.wikidata.org/w/api.php?format=json&action=query&"
@@ -63,6 +66,8 @@ class OpenAlexBot(BaseModel):
                     return False
 
     def __get_first_qid_from_cirrussearch__(self, doi: str) -> Union[str, bool]:
+        if doi is None:
+            raise ValueError("Did not get what we need")
         # Lookup using CirrusSearch
         result = mediawiki_api_call_helper(
             mediawiki_api_url=f"https://www.wikidata.org/w/api.php?format=json&action=query&"
@@ -86,15 +91,43 @@ class OpenAlexBot(BaseModel):
     def __import_new_item__(
             self, doi: str, work: Work, wbi: WikibaseIntegrator
     ):
+        if (doi, work, wbi) is None:
+            raise ValueError("Did not get what we need")
         self.__upload_new_item__(item=self.__prepare_new_item__(doi=doi, work=work, wbi=wbi))
 
-    def __prepare_new_item__(
-            self, doi: str, work: Work, wbi: WikibaseIntegrator
-    ) -> entities.Item:
-        # TODO language of display name using langdetect and set dynamically
-        item = wbi.item.new()
-        item.labels.set("en", work.display_name)
-        item.descriptions.set("en", f"scientific article from {work.publication_year}")
+    def __prepare_references__(self, work: Work, reference: List[Claim]):
+        logger.info(f"Working on references now")
+        oa = OpenAlex()
+        cites_works: List[datatypes.Item] = []
+        for referenced_work_url in work.referenced_works:
+            referenced_work = oa.get_single_work(referenced_work_url)
+            # print(referenced_work.dict())
+            doi = referenced_work.ids.doi_id
+            if doi is not None:
+                if self.__found_using_cirrussearch__(doi):
+                    qid = self.__get_first_qid_from_cirrussearch__(doi)
+                    cites_work = datatypes.Item(
+                        prop_nr=Property.CITES_WORK.value,
+                        value=qid,
+                        references=[reference]
+                    )
+                    cites_works.append(
+                        cites_work
+                    )
+                else:
+                    # TODO decide whether to import transitive references also
+                    logger.warning(f"Reference DOI '{doi}' not found in Wikidata")
+            else:
+                # TODO decide whether to import these
+                logger.warning(f"DOI was None for OpenAlex ID {referenced_work_url} "
+                               f"with ids {referenced_work.ids}, skipping")
+        logger.debug(f"Generated {len(cites_works)} cited works")
+        # if config.loglevel == logging.DEBUG:
+        #     print(cites_works)
+        return cites_works
+
+    @staticmethod
+    def __prepare_reference_claim__() -> List[Claim]:
         # Prepare reference
         retrieved_date = datatypes.Time(
             prop_nr="P813",  # Fetched today
@@ -110,11 +143,13 @@ class OpenAlexBot(BaseModel):
             prop_nr="P248",
             value=StatedIn.OPENALEX.value
         )
-        reference = [
+        return [
             retrieved_date,
             stated_in
         ]
-        # Prepare claims
+
+    @staticmethod
+    def __prepare_non_reference_claims__(work: Work, reference: List[Claim]):
         title = datatypes.MonolingualText(
             prop_nr=Property.TITLE.value,
             text=work.title,
@@ -133,48 +168,34 @@ class OpenAlexBot(BaseModel):
             value=type_qid,
             references=[reference]
         )
+        return [
+            doi,
+            instance_of,
+            title,
+        ]
+
+    def __prepare_new_item__(
+            self, doi: str, work: Work, wbi: WikibaseIntegrator
+    ) -> entities.Item:
+        """This method converts OpenAlex data into a new Wikidata item"""
+        if (doi, work, wbi) is None:
+            raise ValueError("Did not get what we need")
+        # TODO language of display name using langdetect and set dynamically
+        item = wbi.item.new()
+        item.labels.set("en", work.display_name)
+        item.descriptions.set("en", f"scientific article from {work.publication_year}")
+        reference = self.__prepare_reference_claim__()
+        # Prepare claims
         if len(work.referenced_works) > 0:
-            logger.info(f"Working on references now")
-            oa = OpenAlex()
-            cites_works: List[datatypes.Item] = []
-            for referenced_work_url in work.referenced_works:
-                referenced_work = oa.get_single_work(referenced_work_url)
-                # print(referenced_work.dict())
-                doi = referenced_work.ids.doi_id
-                if doi is not None:
-                    if self.__found_using_cirrussearch__(doi):
-                        qid = self.__get_first_qid_from_cirrussearch__(doi)
-                        cites_work = datatypes.Item(
-                            prop_nr=Property.CITES_WORK.value,
-                            value=qid,
-                            references=[reference]
-                        )
-                        cites_works.append(
-                            cites_work
-                        )
-                    else:
-                        # TODO decide whether to import transitive references also
-                        logger.warning(f"Reference DOI '{doi}' not found in Wikidata")
-                else:
-                    # TODO decide whether to import these
-                    logger.warning(f"DOI was None for OpenAlex ID {referenced_work_url} "
-                                   f"with ids {referenced_work.ids}, skipping")
-            logger.debug(f"Generated {len(cites_works)} cited works")
-            if config.loglevel == logging.DEBUG:
-                print(cites_works)
+            cites_works = self.__prepare_references__(work=work, reference=reference)
             if len(cites_works) > 0:
                 item.add_claims(cites_works)
         # TODO convert more data from OpenAlex work to claims
         item.add_claims(
-            [
-                title,
-                doi,
-                instance_of
-            ],
-            # This means that if the value already exist we will update it.
-            # action_if_exists=ActionIfExists.APPEND
+            self.__prepare_non_reference_claims__(),
         )
         if config.loglevel == logging.DEBUG:
+            logger.debug("Printing the item json")
             print(item.get_json())
         return item
 
@@ -213,13 +234,16 @@ class OpenAlexBot(BaseModel):
         self.dataframe = pd.read_csv(self.filename)
 
     def __upload_new_item__(self, item: entities.Item):
+        if item is None:
+            raise ValueError("Did not get what we need")
         if config.upload_enabled:
             new_item = item.write(summary="New item imported from OpenAlex")
             print(f"Added new item {self.entity_url(new_item.id)}")
         else:
             print("skipped upload")
 
-    def entity_url(self, qid):
+    @staticmethod
+    def entity_url(qid):
         return f"{wbi_config.config['WIKIBASE_URL']}/wiki/{qid}"
 
     def start(self):
