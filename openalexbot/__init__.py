@@ -192,7 +192,7 @@ class OpenAlexBot(BaseModel):
                 item.add_claims(cites_works)
         # TODO convert more data from OpenAlex work to claims
         item.add_claims(
-            self.__prepare_non_reference_claims__(),
+            self.__prepare_non_reference_claims__(work=work, reference=reference),
         )
         if config.loglevel == logging.DEBUG:
             logger.debug("Printing the item json")
