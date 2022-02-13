@@ -5,4 +5,6 @@ import logging
 bot_username = ""
 password = ""
 
+upload_enabled = False
 loglevel = logging.INFO
+user_agent = "OpenAlexBot run by User:So9q"
