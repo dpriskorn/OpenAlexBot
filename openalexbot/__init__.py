@@ -149,7 +149,7 @@ class OpenAlexBot(BaseModel):
         ]
 
     @staticmethod
-    def __prepare_non_reference_claims__(work: Work, reference: List[Claim]):
+    def __prepare_non_reference_claims__(doi: str, work: Work, reference: List[Claim]):
         title = datatypes.MonolingualText(
             prop_nr=Property.TITLE.value,
             text=work.title,
@@ -168,11 +168,25 @@ class OpenAlexBot(BaseModel):
             value=type_qid,
             references=[reference]
         )
-        return [
-            doi,
-            instance_of,
-            title,
-        ]
+        publication_date = datatypes.Time(
+            prop_nr=Property.PUBLICATION_DATE.value,
+            time=datetime.strptime(work.publication_date, "%Y-%m-%d").strftime("+%Y-%m-%dT%H:%M:%SZ")
+        )
+        if work.biblio.issue is not None:
+            issue = datatypes.String(
+                prop_nr=Property.ISSUE.value,
+                value=work.biblio.issue
+            )
+        else:
+            issue = None
+        list_of_claims = []
+        for claim in (doi, instance_of, title, publication_date, issue):
+            if claim is not None:
+                list_of_claims.append(claim)
+        if len(list_of_claims) > 0:
+            return list_of_claims
+        else:
+            return None
 
     def __prepare_new_item__(
             self, doi: str, work: Work, wbi: WikibaseIntegrator
@@ -185,14 +199,13 @@ class OpenAlexBot(BaseModel):
         item.labels.set("en", work.display_name)
         item.descriptions.set("en", f"scientific article from {work.publication_year}")
         reference = self.__prepare_reference_claim__()
-        # Prepare claims
         if len(work.referenced_works) > 0:
             cites_works = self.__prepare_references__(work=work, reference=reference)
             if len(cites_works) > 0:
                 item.add_claims(cites_works)
         # TODO convert more data from OpenAlex work to claims
         item.add_claims(
-            self.__prepare_non_reference_claims__(work=work, reference=reference),
+            self.__prepare_non_reference_claims__(doi=doi, work=work, reference=reference),
         )
         if config.loglevel == logging.DEBUG:
             logger.debug("Printing the item json")
