@@ -6,6 +6,7 @@ import langdetect as langdetect
 import pandas as pd
 from openalexapi import OpenAlex, Work
 from pandas import DataFrame
+from purl import URL
 from pydantic import BaseModel
 from rich import print
 from wikibaseintegrator import WikibaseIntegrator, wbi_config, wbi_login, entities
@@ -114,7 +115,8 @@ class OpenAlexBot(BaseModel):
             if doi is not None:
                 if self.__found_using_cirrussearch__(doi):
                     qid = self.__get_first_qid_from_cirrussearch__(doi)
-
+                    logger.info(f"qid found for this reference: {qid}")
+                    # exit()
                     cites_work = datatypes.Item(
                         prop_nr=Property.CITES_WORK.value,
                         value=qid,
@@ -136,16 +138,25 @@ class OpenAlexBot(BaseModel):
         return cites_works
 
     @staticmethod
-    def __prepare_reference_claim__(id: str = None) -> List[Claim]:
+    def __prepare_reference_claim__(id: str = None, work: Work = None) -> List[Claim]:
+        if work is None:
+            raise ValueError("did not get what we need")
         logger.info("Preparing reference claim")
         # Prepare reference
         if id is not None:
+            id_without_prefix = URL(id).path_segment(0)
+            logger.info(f"Using OpenAlex id: {id_without_prefix} extracted from {id}")
             openalex_id = datatypes.ExternalID(
                 prop_nr=Property.OPENALEX_ID.value,
-                value=id
+                value=id_without_prefix
             )
         else:
-            openalex_id = None
+            # Fallback to the work id as id
+            logger.info(f"Using OpenAlex id: {work.id_without_prefix}")
+            openalex_id = datatypes.ExternalID(
+                prop_nr=Property.OPENALEX_ID.value,
+                value=work.id_without_prefix
+            )
         retrieved_date = datatypes.Time(
             prop_nr="P813",  # Fetched today
             time=datetime.utcnow().replace(
@@ -162,7 +173,8 @@ class OpenAlexBot(BaseModel):
         )
         claims = []
         for claim in (retrieved_date, stated_in, openalex_id):
-            claims.append(claim)
+            if claim is not None:
+                claims.append(claim)
         return claims
 
     def __prepare_authors__(self, work: Work) -> Optional[List[Claim]]:
@@ -190,7 +202,7 @@ class OpenAlexBot(BaseModel):
                     prop_nr=Property.AUTHOR_NAME_STRING.value,
                     value=name,
                     qualifiers=[series_ordinal],
-                    references=[self.__prepare_reference_claim__(id=id)]
+                    references=[self.__prepare_reference_claim__(id=id, work=work)]
                 )
                 authors.append(author)
         return authors
@@ -278,7 +290,7 @@ class OpenAlexBot(BaseModel):
         item.descriptions.set("en", f"scientific article from {work.publication_year}")
         # Prepare claims
         # First prepare the reference needed in other claims
-        reference = self.__prepare_reference_claim__()
+        reference = self.__prepare_reference_claim__(work=work)
         authors = self.__prepare_authors__(work=work)
         cites_works = self.__prepare_cites_works__(work=work, reference=reference)
         subjects = self.__prepare_subjects__(work=work)
@@ -307,7 +319,7 @@ class OpenAlexBot(BaseModel):
         wbi = WikibaseIntegrator(login=wbi_login.Login(
             user=config.bot_username,
             password=config.password
-        ))
+        ), )
         processed_dois = set()
         for doi in self.dois:
             logger.debug(f"Working on doi: '{doi}'")
@@ -343,6 +355,8 @@ class OpenAlexBot(BaseModel):
         if config.upload_enabled:
             new_item = item.write(summary="New item imported from OpenAlex")
             print(f"Added new item {self.entity_url(new_item.id)}")
+            if config.press_enter_to_continue:
+                input("press enter to continue")
         else:
             print("skipped upload")
 
