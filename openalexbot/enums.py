@@ -4,6 +4,7 @@ from openalexapi.work import WorkType
 
 
 class Property(Enum):
+    AUTHOR = "P50"
     AUTHOR_NAME_STRING = "P2093"
     CITES_WORK = "P2860"
     DOI = "P356"

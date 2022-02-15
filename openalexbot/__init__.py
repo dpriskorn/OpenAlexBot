@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class OpenAlexBot(BaseModel):
     """
     This class takes a CSV as input
-    The column "doi" is then processed row by row
+    The column "query_string" is then processed row by row
     It supports both "naked" dois and with prefix.
     """
     dataframe: Optional[DataFrame]
@@ -34,20 +34,20 @@ class OpenAlexBot(BaseModel):
     filename: str
 
     def __check_and_extract_doi_column__(self):
-        if "doi" in self.dataframe.columns:
-            logger.debug("Found 'doi' column")
+        if "query_string" in self.dataframe.columns:
+            logger.debug("Found 'query_string' column")
             if len(self.dataframe) > 0:
-                dois: List[str] = self.dataframe["doi"].values
+                dois: List[str] = self.dataframe["query_string"].values
                 self.dois = set(dois)
             else:
                 raise ValueError("No rows in the dataframe")
         else:
-            raise ValueError("No 'doi' column found")
+            raise ValueError("No 'query_string' column found")
 
     def __found_using_cirrussearch__(self, doi: str) -> bool:
         if doi is None:
             raise ValueError("Did not get what we need")
-        result = self.__call_cirrussearch_api__(doi=doi)
+        result = self.__call_cirrussearch_api__(query_string=doi)
         # logger.info(f"result from CirrusSearch: {result}")
         if config.loglevel == logging.DEBUG:
             print(result)
@@ -63,24 +63,24 @@ class OpenAlexBot(BaseModel):
                 else:
                     return False
 
-    def __call_cirrussearch_api__(self, doi: str) -> dict:
+    def __call_cirrussearch_api__(self, query_string: str) -> dict:
         params = dict(
             # format="json",
             action="query",
             list="search",
             # srprop=None,
             srlimit=1,
-            srsearch=doi
+            srsearch=query_string
         )
         return mediawiki_api_call_helper(
             data=params,
             allow_anonymous=True
         )
 
-    def __get_first_qid_from_cirrussearch__(self, doi: str) -> Union[str, bool]:
-        if doi is None:
+    def __get_first_qid_from_cirrussearch__(self, query_string: str) -> Union[str, bool]:
+        if query_string is None:
             raise ValueError("Did not get what we need")
-        result = self.__call_cirrussearch_api__(doi=doi)
+        result = self.__call_cirrussearch_api__(query_string=query_string)
         # logger.info(f"result from CirrusSearch: {result}")
         if config.loglevel == logging.DEBUG:
             print(result)
@@ -178,33 +178,50 @@ class OpenAlexBot(BaseModel):
         return claims
 
     def __prepare_authors__(self, work: Work) -> Optional[List[Claim]]:
-        """This method prepares the author claims.
+        """
+        This method prepares the author claims.
         Unfortunately OpenAlex neither has numerical positions on authors
-        nor first and last names separation."""
+        nor first and last names separation.
+
+        Neither Crossref nor OpenAlex has numerical ordinals.
+        We copy the current praxis at WD and assign numerals trusting the order of OpenAlex
+        """
         if work is None:
             raise ValueError("did not get what we need")
         logger.info("Preparing author claims")
         authors = []
         logger.info(f"Found {len(work.authorships)} authorships to process")
+        ordinal = 1
         for authorship in work.authorships:
             if authorship.author.orcid is not None:
                 id = authorship.author.id
                 name = authorship.author.display_name
+                orcid = authorship.author.orcid_id
                 # The positions are one of (first, middle, last)
                 position = authorship.author_position
-                logger.info(f"Found author with name '{name}', position {position} and id '{id}'")
                 # We ignore authorship.institutions for now
+                logger.info(f"Found author with name '{name}', position {position}, orcid {orcid} and id '{id}'")
                 series_ordinal = datatypes.String(
                     prop_nr=Property.SERIES_ORDINAL.value,
-                    value=position
+                    value=str(ordinal)
                 )
-                author = datatypes.String(
-                    prop_nr=Property.AUTHOR_NAME_STRING.value,
-                    value=name,
-                    qualifiers=[series_ordinal],
-                    references=[self.__prepare_reference_claim__(id=id, work=work)]
-                )
+                qid = self.__get_first_qid_from_cirrussearch__(query_string=orcid)
+                if qid:
+                    author = datatypes.Item(
+                        prop_nr=Property.AUTHOR.value,
+                        value=qid,
+                        qualifiers=[series_ordinal],
+                        references=[self.__prepare_reference_claim__(id=id, work=work)]
+                    )
+                else:
+                    author = datatypes.String(
+                        prop_nr=Property.AUTHOR_NAME_STRING.value,
+                        value=name,
+                        qualifiers=[series_ordinal],
+                        references=[self.__prepare_reference_claim__(id=id, work=work)]
+                    )
                 authors.append(author)
+                ordinal += 1
         return authors
 
     def __prepare_subjects__(self, work: Work) -> Optional[List[Claim]]:
@@ -322,13 +339,13 @@ class OpenAlexBot(BaseModel):
         ), )
         processed_dois = set()
         for doi in self.dois:
-            logger.debug(f"Working on doi: '{doi}'")
+            logger.debug(f"Working on query_string: '{doi}'")
             doi = doi.replace("https://doi.org/", "")
             if "http" in doi:
                 raise ValueError(f"http found in this DOI after "
                                  f"removing the prefix: {doi}")
             if doi not in processed_dois:
-                work = oa.get_single_work(f"doi:{doi}")
+                work = oa.get_single_work(f"query_string:{doi}")
                 if work is not None:
                     logger.info(f"Found Work in OpenAlex with id {work.id}")
                     # print(work.dict())
