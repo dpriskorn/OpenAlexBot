@@ -161,13 +161,14 @@ class OpenAlexBot(BaseModel):
         Unfortunately OpenAlex neither has numerical positions on authors
         nor first and last names separation."""
         authors = []
+        logger.info(f"Found {len(work.authorships)} authorships to process")
         for authorship in work.authorships:
             if authorship.author.orcid is not None:
                 id = authorship.author.id
                 name = authorship.author.display_name
                 # The positions are one of (first, middle, last)
                 position = authorship.author_position
-                logger.info(f"Found author with name '{name}', position {position} and id '{id}'")
+                logger.info(f"Found author with name '{name}', position {position} and id '{id.as_string}'")
                 # We ignore authorship.institutions for now
                 series_ordinal = datatypes.String(
                     prop_nr=Property.SERIES_ORDINAL.value,
