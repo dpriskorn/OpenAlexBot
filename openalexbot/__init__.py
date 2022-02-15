@@ -6,7 +6,7 @@ from urllib.parse import unquote
 import langdetect as langdetect
 import pandas as pd
 from openalexapi import OpenAlex, Work
-from pandas import DataFrame
+from pandas import DataFrame, Series
 from purl import URL
 from pydantic import BaseModel
 from rich import print
@@ -33,6 +33,7 @@ class OpenAlexBot(BaseModel):
     dois: Optional[Set[str]]
     email: Optional[str]
     filename: str
+    doi_series: Optional[Series]
 
     def __drop_empty_values__(self):
         self.dataframe = self.dataframe.dropna()
@@ -40,21 +41,21 @@ class OpenAlexBot(BaseModel):
             self.dataframe.info()
 
     def __unquote_dois__(self):
-        self.dataframe = self.dataframe['doi'].transform(lambda x: unquote(x))
-        if config.loglevel == logging.DEBUG:
-            self.dataframe.info()
-            self.dataframe.sample(20)
-
-    def __check_and_extract_doi_column__(self):
         if "doi" in self.dataframe.columns:
             logger.debug("Found 'doi' column")
-            if len(self.dataframe) > 0:
-                dois: List[str] = self.dataframe["doi"].values
-                self.dois = set(dois)
-            else:
-                raise ValueError("No rows in the dataframe")
+            self.doi_series = self.dataframe['doi'].transform(lambda x: unquote(x))
+            if config.loglevel == logging.DEBUG:
+                self.doi_series.info()
+                self.doi_series.sample(20)
         else:
-            raise ValueError("No 'doi' column found")
+            raise ValueError(f"No 'doi' column found in {self.filename}")
+
+    def __check_and_extract_from_doi_series__(self):
+        if len(self.doi_series) > 0:
+            dois: List[str] = self.dataframe["doi"].values
+            self.dois = set(dois)
+        else:
+            raise ValueError("No rows in the doi column")
 
     def __found_using_cirrussearch__(self, doi: str) -> bool:
         if doi is None:
@@ -399,7 +400,7 @@ class OpenAlexBot(BaseModel):
         self.__read_csv__()
         self.__drop_empty_values__()
         self.__unquote_dois__()
-        self.__check_and_extract_doi_column__()
+        self.__check_and_extract_from_doi_series__()
         self.__process_dois__()
 
     class Config:

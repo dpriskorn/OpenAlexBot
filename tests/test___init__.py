@@ -12,12 +12,12 @@ class TestOpenAlexBot(TestCase):
         oab = OpenAlexBot(filename="test_data/test_doi_uppercase.csv")
         oab.__read_csv__()
         with self.assertRaises(ValueError):
-            oab.__check_and_extract_doi_column__()
+            oab.__check_and_extract_from_doi_series__()
 
     def test_read_csv_no_doi_column(self):
         oab = OpenAlexBot(filename="test_data/test_doi_lowercase.csv")
         oab.__read_csv__()
-        oab.__check_and_extract_doi_column__()
+        oab.__check_and_extract_from_doi_series__()
         if len(oab.dois) != 1:
             self.fail()
 
