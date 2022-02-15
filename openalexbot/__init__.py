@@ -29,6 +29,7 @@ class OpenAlexBot(BaseModel):
     """
     dataframe: Optional[DataFrame]
     dois: Optional[Set[str]]
+    email: Optional[str]
     filename: str
 
     def __check_and_extract_doi_column__(self):
@@ -280,7 +281,7 @@ class OpenAlexBot(BaseModel):
         return item
 
     def __process_dois__(self):
-        oa = OpenAlex()
+        oa = OpenAlex(email=self.email)
         wbi_config.config["USER_AGENT_DEFAULT"] = config.user_agent
         if config.use_test_wikidata:
             wbi_config.config["WIKIBASE_URL"] = "http://test.wikidata.org"
@@ -290,7 +291,7 @@ class OpenAlexBot(BaseModel):
         ))
         processed_dois = set()
         for doi in self.dois:
-            logger.debug(f"doi: '{doi}'")
+            logger.debug(f"Working on doi: '{doi}'")
             doi = doi.replace("https://doi.org/", "")
             if "http" in doi:
                 raise ValueError(f"http found in this DOI after "
@@ -298,8 +299,10 @@ class OpenAlexBot(BaseModel):
             if doi not in processed_dois:
                 work = oa.get_single_work(f"doi:{doi}")
                 if work is not None:
+                    logger.info(f"Found Work in OpenAlex with id {work.id.as_string}")
                     # print(work.dict())
                     if not self.__found_using_cirrussearch__(doi):
+                        logger.info("Starting import")
                         self.__import_new_item__(doi=doi, work=work, wbi=wbi)
                     else:
                         print(f"DOI: '{doi}' is already in Wikidata, skipping")
