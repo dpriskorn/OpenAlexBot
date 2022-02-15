@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timezone
 from typing import Set, Optional, List, Union
+from urllib.parse import unquote
 
 import langdetect as langdetect
 import pandas as pd
@@ -32,6 +33,17 @@ class OpenAlexBot(BaseModel):
     dois: Optional[Set[str]]
     email: Optional[str]
     filename: str
+
+    def __drop_empty_values__(self):
+        self.dataframe = self.dataframe.dropna()
+        if config.loglevel == logging.DEBUG:
+            self.dataframe.info()
+
+    def __unquote_dois__(self):
+        self.dataframe = self.dataframe['doi'].transform(lambda x: unquote(x))
+        if config.loglevel == logging.DEBUG:
+            self.dataframe.info()
+            self.dataframe.sample(20)
 
     def __check_and_extract_doi_column__(self):
         if "doi" in self.dataframe.columns:
@@ -365,6 +377,8 @@ class OpenAlexBot(BaseModel):
 
     def __read_csv__(self):
         self.dataframe = pd.read_csv(self.filename)
+        if config.loglevel == logging.DEBUG:
+            self.dataframe.info()
 
     def __upload_new_item__(self, item: entities.Item):
         if item is None:
@@ -383,6 +397,8 @@ class OpenAlexBot(BaseModel):
 
     def start(self):
         self.__read_csv__()
+        self.__drop_empty_values__()
+        self.__unquote_dois__()
         self.__check_and_extract_doi_column__()
         self.__process_dois__()
 
