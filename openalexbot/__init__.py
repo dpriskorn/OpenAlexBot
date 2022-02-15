@@ -222,7 +222,7 @@ class OpenAlexBot(BaseModel):
                 subject = datatypes.Item(
                     prop_nr=Property.MAIN_SUBJECT.value,
                     value=qid,
-                    references=[self.__prepare_reference_claim__(id=id)]
+                    references=[self.__prepare_reference_claim__(id=id, work=work)]
                 )
                 subjects.append(subject)
         return subjects
