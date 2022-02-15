@@ -34,15 +34,15 @@ class OpenAlexBot(BaseModel):
     filename: str
 
     def __check_and_extract_doi_column__(self):
-        if "query_string" in self.dataframe.columns:
-            logger.debug("Found 'query_string' column")
+        if "doi" in self.dataframe.columns:
+            logger.debug("Found 'doi' column")
             if len(self.dataframe) > 0:
-                dois: List[str] = self.dataframe["query_string"].values
+                dois: List[str] = self.dataframe["doi"].values
                 self.dois = set(dois)
             else:
                 raise ValueError("No rows in the dataframe")
         else:
-            raise ValueError("No 'query_string' column found")
+            raise ValueError("No 'doi' column found")
 
     def __found_using_cirrussearch__(self, doi: str) -> bool:
         if doi is None:
