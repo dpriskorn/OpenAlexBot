@@ -5,6 +5,7 @@ import logging
 bot_username = ""
 password = ""
 
+use_test_wikidata = True
 press_enter_to_continue = True
 upload_enabled = False
 loglevel = logging.INFO

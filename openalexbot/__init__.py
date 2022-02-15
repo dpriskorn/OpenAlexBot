@@ -182,6 +182,23 @@ class OpenAlexBot(BaseModel):
                 authors.append(author)
         return authors
 
+    def __prepare_subjects__(self, work: Work) -> Optional[List[Claim]]:
+        """This method prepares the concept aka main subject claims."""
+        subjects = []
+        for concept in work.concepts:
+            if concept.wikidata_id is not None:
+                qid = concept.wikidata_id
+                label = concept.display_name
+                id = concept.id
+                logger.info(f"Found concept with name '{label}' and wikidata id '{qid}'")
+                subject = datatypes.Item(
+                    prop_nr=Property.MAIN_SUBJECT.value,
+                    value=qid,
+                    references=[self.__prepare_reference_claim__(id=id)]
+                )
+                subjects.append(subject)
+        return subjects
+
     def __prepare_other_claims__(self, doi: str, work: Work, reference: List[Claim]):
         title = datatypes.MonolingualText(
             prop_nr=Property.TITLE.value,
@@ -245,6 +262,9 @@ class OpenAlexBot(BaseModel):
         reference = self.__prepare_reference_claim__()
         authors = self.__prepare_authors__(work=work)
         cites_works = self.__prepare_references__(work=work, reference=reference)
+        subjects = self.__prepare_subjects__(work=work)
+        if len(subjects) > 0:
+            item.add_claims(subjects)
         if len(authors) > 0:
             item.add_claims(authors)
         if len(cites_works) > 0:
@@ -261,6 +281,8 @@ class OpenAlexBot(BaseModel):
     def __process_dois__(self):
         oa = OpenAlex()
         wbi_config.config["USER_AGENT_DEFAULT"] = config.user_agent
+        if config.use_test_wikidata:
+            wbi_config.config["WIKIBASE_URL"] = "http://test.wikidata.org"
         wbi = WikibaseIntegrator(login=wbi_login.Login(
             user=config.bot_username,
             password=config.password
