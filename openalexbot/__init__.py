@@ -46,19 +46,7 @@ class OpenAlexBot(BaseModel):
     def __found_using_cirrussearch__(self, doi: str) -> bool:
         if doi is None:
             raise ValueError("Did not get what we need")
-        # Lookup using CirrusSearch
-        params = dict(
-            # format="json",
-            action="query",
-            list="search",
-            # srprop=None,
-            srlimit=1,
-            srsearch=doi
-        )
-        result = mediawiki_api_call_helper(
-            data=params,
-            allow_anonymous=True
-        )
+        result = self.__call_cirrussearch_api__(doi=doi)
         # logger.info(f"result from CirrusSearch: {result}")
         if config.loglevel == logging.DEBUG:
             print(result)
@@ -74,15 +62,24 @@ class OpenAlexBot(BaseModel):
                 else:
                     return False
 
+    def __call_cirrussearch_api__(self, doi: str) -> dict:
+        params = dict(
+            # format="json",
+            action="query",
+            list="search",
+            # srprop=None,
+            srlimit=1,
+            srsearch=doi
+        )
+        return mediawiki_api_call_helper(
+            data=params,
+            allow_anonymous=True
+        )
+
     def __get_first_qid_from_cirrussearch__(self, doi: str) -> Union[str, bool]:
         if doi is None:
             raise ValueError("Did not get what we need")
-        # Lookup using CirrusSearch
-        result = mediawiki_api_call_helper(
-            mediawiki_api_url=f"https://www.wikidata.org/w/api.php?format=json&action=query&"
-                              f"list=search&srprop=&srlimit=10&srsearch={doi}",
-            allow_anonymous=True
-        )
+        result = self.__call_cirrussearch_api__(doi=doi)
         # logger.info(f"result from CirrusSearch: {result}")
         if config.loglevel == logging.DEBUG:
             print(result)
@@ -104,9 +101,11 @@ class OpenAlexBot(BaseModel):
             raise ValueError("Did not get what we need")
         self.__upload_new_item__(item=self.__prepare_new_item__(doi=doi, work=work, wbi=wbi))
 
-    def __prepare_references__(self, work: Work, reference: List[Claim]):
-        logger.info(f"Working on references now")
-        oa = OpenAlex()
+    def __prepare_cites_works__(self, work: Work, reference: List[Claim]):
+        if (work, reference) is None:
+            raise ValueError("did not get what we need")
+        logger.info("Preparing cites works claims")
+        oa = OpenAlex(email=self.email)
         cites_works: List[datatypes.Item] = []
         for referenced_work_url in work.referenced_works:
             referenced_work = oa.get_single_work(referenced_work_url)
@@ -115,6 +114,7 @@ class OpenAlexBot(BaseModel):
             if doi is not None:
                 if self.__found_using_cirrussearch__(doi):
                     qid = self.__get_first_qid_from_cirrussearch__(doi)
+
                     cites_work = datatypes.Item(
                         prop_nr=Property.CITES_WORK.value,
                         value=qid,
@@ -137,6 +137,7 @@ class OpenAlexBot(BaseModel):
 
     @staticmethod
     def __prepare_reference_claim__(id: str = None) -> List[Claim]:
+        logger.info("Preparing reference claim")
         # Prepare reference
         if id is not None:
             openalex_id = datatypes.ExternalID(
@@ -168,6 +169,9 @@ class OpenAlexBot(BaseModel):
         """This method prepares the author claims.
         Unfortunately OpenAlex neither has numerical positions on authors
         nor first and last names separation."""
+        if work is None:
+            raise ValueError("did not get what we need")
+        logger.info("Preparing author claims")
         authors = []
         logger.info(f"Found {len(work.authorships)} authorships to process")
         for authorship in work.authorships:
@@ -176,7 +180,7 @@ class OpenAlexBot(BaseModel):
                 name = authorship.author.display_name
                 # The positions are one of (first, middle, last)
                 position = authorship.author_position
-                logger.info(f"Found author with name '{name}', position {position} and id '{id.as_string}'")
+                logger.info(f"Found author with name '{name}', position {position} and id '{id}'")
                 # We ignore authorship.institutions for now
                 series_ordinal = datatypes.String(
                     prop_nr=Property.SERIES_ORDINAL.value,
@@ -193,6 +197,9 @@ class OpenAlexBot(BaseModel):
 
     def __prepare_subjects__(self, work: Work) -> Optional[List[Claim]]:
         """This method prepares the concept aka main subject claims."""
+        if work is None:
+            raise ValueError("did not get what we need")
+        logger.info("Preparing subject claims")
         subjects = []
         for concept in work.concepts:
             if concept.wikidata_id is not None:
@@ -209,6 +216,9 @@ class OpenAlexBot(BaseModel):
         return subjects
 
     def __prepare_other_claims__(self, doi: str, work: Work, reference: List[Claim]):
+        if (work, doi, reference) is None:
+            raise ValueError("did not get what we need")
+        logger.info("Preparing other claims")
         title = datatypes.MonolingualText(
             prop_nr=Property.TITLE.value,
             text=work.title,
@@ -270,7 +280,7 @@ class OpenAlexBot(BaseModel):
         # First prepare the reference needed in other claims
         reference = self.__prepare_reference_claim__()
         authors = self.__prepare_authors__(work=work)
-        cites_works = self.__prepare_references__(work=work, reference=reference)
+        cites_works = self.__prepare_cites_works__(work=work, reference=reference)
         subjects = self.__prepare_subjects__(work=work)
         if len(subjects) > 0:
             item.add_claims(subjects)
@@ -288,6 +298,8 @@ class OpenAlexBot(BaseModel):
         return item
 
     def __process_dois__(self):
+        if self.email is None:
+            raise ValueError("self.email was None")
         oa = OpenAlex(email=self.email)
         wbi_config.config["USER_AGENT_DEFAULT"] = config.user_agent
         if config.use_test_wikidata:
