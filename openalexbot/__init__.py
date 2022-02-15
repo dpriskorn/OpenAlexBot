@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Set, Optional, List, Union
 
+import langdetect as langdetect
 import pandas as pd
 from openalexapi import OpenAlex, Work
 from pandas import DataFrame
@@ -127,8 +128,15 @@ class OpenAlexBot(BaseModel):
         return cites_works
 
     @staticmethod
-    def __prepare_reference_claim__() -> List[Claim]:
+    def __prepare_reference_claim__(id: str = None) -> List[Claim]:
         # Prepare reference
+        if id is not None:
+            openalex_id = datatypes.ExternalID(
+                prop_nr=Property.OPENALEX_ID.value,
+                value=id
+            )
+        else:
+            openalex_id = None
         retrieved_date = datatypes.Time(
             prop_nr="P813",  # Fetched today
             time=datetime.utcnow().replace(
@@ -143,13 +151,38 @@ class OpenAlexBot(BaseModel):
             prop_nr="P248",
             value=StatedIn.OPENALEX.value
         )
-        return [
-            retrieved_date,
-            stated_in
-        ]
+        claims = []
+        for claim in (retrieved_date, stated_in, openalex_id):
+            claims.append(claim)
+        return claims
 
-    @staticmethod
-    def __prepare_non_reference_claims__(doi: str, work: Work, reference: List[Claim]):
+    def __prepare_authors__(self, work: Work) -> Optional[List[Claim]]:
+        """This method prepares the author claims.
+        Unfortunately OpenAlex neither has numerical positions on authors
+        nor first and last names separation."""
+        authors = []
+        for authorship in work.authorships:
+            if authorship.author.orcid is not None:
+                id = authorship.author.id
+                name = authorship.author.display_name
+                # The positions are one of (first, middle, last)
+                position = authorship.author_position
+                logger.info(f"Found author with name '{name}', position {position} and id '{id}'")
+                # We ignore authorship.institutions for now
+                series_ordinal = datatypes.String(
+                    prop_nr=Property.SERIES_ORDINAL.value,
+                    value=position
+                )
+                author = datatypes.String(
+                    prop_nr=Property.AUTHOR_NAME_STRING.value,
+                    value=name,
+                    qualifiers=[series_ordinal],
+                    references=[self.__prepare_reference_claim__(id=id)]
+                )
+                authors.append(author)
+        return authors
+
+    def __prepare_other_claims__(self, doi: str, work: Work, reference: List[Claim]):
         title = datatypes.MonolingualText(
             prop_nr=Property.TITLE.value,
             text=work.title,
@@ -172,6 +205,13 @@ class OpenAlexBot(BaseModel):
             prop_nr=Property.PUBLICATION_DATE.value,
             time=datetime.strptime(work.publication_date, "%Y-%m-%d").strftime("+%Y-%m-%dT%H:%M:%SZ")
         )
+        # DISABLED because OpenAlex does not have this information currently
+        # language_of_work = datatypes.Item(
+        #     prop_nr=Property.LANGUAGE_OF_WORK.value,
+        #     value=,
+        #     references=[]
+        # )
+        self.__prepare_authors__(work=work)
         if work.biblio.issue is not None:
             issue = datatypes.String(
                 prop_nr=Property.ISSUE.value,
@@ -195,17 +235,23 @@ class OpenAlexBot(BaseModel):
         if (doi, work, wbi) is None:
             raise ValueError("Did not get what we need")
         # TODO language of display name using langdetect and set dynamically
+        detected_language = langdetect.detect(work.display_name)
+        logger.info(f"Detected language {detected_language} for '{work.display_name}'")
         item = wbi.item.new()
-        item.labels.set("en", work.display_name)
+        item.labels.set(detected_language, work.display_name)
         item.descriptions.set("en", f"scientific article from {work.publication_year}")
+        # Prepare claims
+        # First prepare the reference needed in other claims
         reference = self.__prepare_reference_claim__()
-        if len(work.referenced_works) > 0:
-            cites_works = self.__prepare_references__(work=work, reference=reference)
-            if len(cites_works) > 0:
-                item.add_claims(cites_works)
+        authors = self.__prepare_authors__(work=work)
+        cites_works = self.__prepare_references__(work=work, reference=reference)
+        if len(authors) > 0:
+            item.add_claims(authors)
+        if len(cites_works) > 0:
+            item.add_claims(cites_works)
         # TODO convert more data from OpenAlex work to claims
         item.add_claims(
-            self.__prepare_non_reference_claims__(doi=doi, work=work, reference=reference),
+            self.__prepare_other_claims__(doi=doi, work=work, reference=reference),
         )
         if config.loglevel == logging.DEBUG:
             logger.debug("Printing the item json")
