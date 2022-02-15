@@ -227,5 +227,5 @@ class TestOpenAlexBot(TestCase):
 # """)
 #         work = Work(**test_json)
 #         wbi = WikibaseIntegrator()
-#         item = oab.__prepare_new_item__(doi="10.7717/peerj.4375", work=work, wbi=wbi)
+#         item = oab.__prepare_new_item__(query_string="10.7717/peerj.4375", work=work, wbi=wbi)
 #         print(item.get_json())
