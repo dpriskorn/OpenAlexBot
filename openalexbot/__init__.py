@@ -47,9 +47,16 @@ class OpenAlexBot(BaseModel):
         if doi is None:
             raise ValueError("Did not get what we need")
         # Lookup using CirrusSearch
+        params = dict(
+            # format="json",
+            action="query",
+            list="search",
+            # srprop=None,
+            srlimit=1,
+            srsearch=doi
+        )
         result = mediawiki_api_call_helper(
-            mediawiki_api_url=f"https://www.wikidata.org/w/api.php?format=json&action=query&"
-                              f"list=search&srprop=&srlimit=10&srsearch={doi}",
+            data=params,
             allow_anonymous=True
         )
         # logger.info(f"result from CirrusSearch: {result}")
@@ -299,7 +306,7 @@ class OpenAlexBot(BaseModel):
             if doi not in processed_dois:
                 work = oa.get_single_work(f"doi:{doi}")
                 if work is not None:
-                    logger.info(f"Found Work in OpenAlex with id {work.id.as_string}")
+                    logger.info(f"Found Work in OpenAlex with id {work.id}")
                     # print(work.dict())
                     if not self.__found_using_cirrussearch__(doi):
                         logger.info("Starting import")
