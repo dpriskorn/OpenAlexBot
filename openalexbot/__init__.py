@@ -358,7 +358,7 @@ class OpenAlexBot(BaseModel):
                 raise ValueError(f"http found in this DOI after "
                                  f"removing the prefix: {doi}")
             if doi not in processed_dois:
-                work = oa.get_single_work(f"query_string:{doi}")
+                work = oa.get_single_work(f"doi:{doi}")
                 if work is not None:
                     logger.info(f"Found Work in OpenAlex with id {work.id}")
                     # print(work.dict())
