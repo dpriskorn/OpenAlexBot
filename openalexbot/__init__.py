@@ -271,6 +271,46 @@ class OpenAlexBot(BaseModel):
         else:
             raise ValueError(f"Venue with ISSN-L {issn_l} not found in Wikidata")
 
+    @staticmethod
+    def __prepare_reference_claim__(id: str = None, work: Work = None) -> List[Claim]:
+        if work is None:
+            raise ValueError("did not get what we need")
+        logger.info("Preparing reference claim")
+        # Prepare reference
+        if id is not None:
+            id_without_prefix = URL(id).path_segment(0)
+            logger.info(f"Using OpenAlex id: {id_without_prefix} extracted from {id}")
+            openalex_id = datatypes.ExternalID(
+                prop_nr=Property.OPENALEX_ID.value,
+                value=id_without_prefix
+            )
+        else:
+            # Fallback to the work id as id
+            logger.info(f"Using OpenAlex id: {work.id_without_prefix}")
+            openalex_id = datatypes.ExternalID(
+                prop_nr=Property.OPENALEX_ID.value,
+                value=work.id_without_prefix
+            )
+        retrieved_date = datatypes.Time(
+            prop_nr="P813",  # Fetched today
+            time=datetime.utcnow().replace(
+                tzinfo=timezone.utc
+            ).replace(
+                hour=0,
+                minute=0,
+                second=0,
+            ).strftime("+%Y-%m-%dT%H:%M:%SZ")
+        )
+        stated_in = datatypes.Item(
+            prop_nr="P248",
+            value=StatedIn.OPENALEX.value
+        )
+        claims = []
+        for claim in (retrieved_date, stated_in, openalex_id):
+            if claim is not None:
+                claims.append(claim)
+        return claims
+
     def __prepare_single_value_claims__(self, doi: str, work: Work, reference: List[Claim]):
         if (work, doi, reference) is None:
             raise ValueError("did not get what we need")
@@ -320,46 +360,6 @@ class OpenAlexBot(BaseModel):
             return list_of_claims
         else:
             return None
-
-    @staticmethod
-    def __prepare_reference_claim__(id: str = None, work: Work = None) -> List[Claim]:
-        if work is None:
-            raise ValueError("did not get what we need")
-        logger.info("Preparing reference claim")
-        # Prepare reference
-        if id is not None:
-            id_without_prefix = URL(id).path_segment(0)
-            logger.info(f"Using OpenAlex id: {id_without_prefix} extracted from {id}")
-            openalex_id = datatypes.ExternalID(
-                prop_nr=Property.OPENALEX_ID.value,
-                value=id_without_prefix
-            )
-        else:
-            # Fallback to the work id as id
-            logger.info(f"Using OpenAlex id: {work.id_without_prefix}")
-            openalex_id = datatypes.ExternalID(
-                prop_nr=Property.OPENALEX_ID.value,
-                value=work.id_without_prefix
-            )
-        retrieved_date = datatypes.Time(
-            prop_nr="P813",  # Fetched today
-            time=datetime.utcnow().replace(
-                tzinfo=timezone.utc
-            ).replace(
-                hour=0,
-                minute=0,
-                second=0,
-            ).strftime("+%Y-%m-%dT%H:%M:%SZ")
-        )
-        stated_in = datatypes.Item(
-            prop_nr="P248",
-            value=StatedIn.OPENALEX.value
-        )
-        claims = []
-        for claim in (retrieved_date, stated_in, openalex_id):
-            if claim is not None:
-                claims.append(claim)
-        return claims
 
     def __prepare_subjects__(self, work: Work) -> Optional[List[Claim]]:
         """This method prepares the concept aka main subject claims."""
