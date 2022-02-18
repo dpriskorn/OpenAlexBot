@@ -323,7 +323,8 @@ class OpenAlexBot(BaseModel):
         instance_of = self.__prepare_instance_of__(work=work, reference=reference)
         publication_date = datatypes.Time(
             prop_nr=Property.PUBLICATION_DATE.value,
-            time=datetime.strptime(work.publication_date, "%Y-%m-%d").strftime("+%Y-%m-%dT%H:%M:%SZ")
+            time=datetime.strptime(work.publication_date, "%Y-%m-%d").strftime("+%Y-%m-%dT%H:%M:%SZ"),
+            references=[reference]
         )
         published_in = self.__prepare_published_in__(work=work, reference=reference)
         title = datatypes.MonolingualText(
@@ -341,7 +342,8 @@ class OpenAlexBot(BaseModel):
         if work.biblio.issue is not None:
             issue = datatypes.String(
                 prop_nr=Property.ISSUE.value,
-                value=work.biblio.issue
+                value=work.biblio.issue,
+                references=[reference]
             )
         else:
             issue = None
