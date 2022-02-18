@@ -1,4 +1,4 @@
-from openalexapi.work import WorkType, Work
+from openalexapi.work import WorkType, Work  # type: ignore
 from pydantic import BaseModel
 
 

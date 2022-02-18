@@ -1,7 +1,5 @@
 from enum import Enum
 
-from openalexapi.work import WorkType
-
 
 class Property(Enum):
     AUTHOR = "P50"

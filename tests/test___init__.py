@@ -8,13 +8,13 @@ from openalexbot import OpenAlexBot
 
 
 class TestOpenAlexBot(TestCase):
-    def test_read_csv_no_doi_column(self):
+    def test_read_csv_no_doi_column_upper(self):
         oab = OpenAlexBot(filename="test_data/test_doi_uppercase.csv")
         oab.__read_csv__()
         with self.assertRaises(ValueError):
             oab.__check_and_extract_from_doi_series__()
 
-    def test_read_csv_no_doi_column(self):
+    def test_read_csv_no_doi_column_lower(self):
         oab = OpenAlexBot(filename="test_data/test_doi_lowercase.csv")
         oab.__read_csv__()
         oab.__check_and_extract_from_doi_series__()

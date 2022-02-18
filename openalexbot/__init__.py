@@ -3,11 +3,11 @@ from datetime import datetime, timezone
 from typing import Set, Optional, List, Union
 from urllib.parse import unquote
 
-import langdetect as langdetect
-import pandas as pd
+import langdetect as langdetect  # type: ignore
+import pandas as pd  # type: ignore
 from openalexapi import OpenAlex, Work
-from pandas import DataFrame, Series
-from purl import URL
+from pandas import DataFrame, Series  # type: ignore
+from purl import URL  # type: ignore
 from pydantic import BaseModel
 from rich import print
 from wikibaseintegrator import WikibaseIntegrator, wbi_config, wbi_login, entities
