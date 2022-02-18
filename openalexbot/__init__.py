@@ -77,6 +77,9 @@ class OpenAlexBot(BaseModel):
                     return False
 
     def __call_cirrussearch_api__(self, query_string: str) -> dict:
+        """This calls the cirrussearch API.
+        :param query_string can be a doi or use special filters like "haswbstatement:P31=QID"
+        """
         params = dict(
             # format="json",
             action="query",
@@ -197,6 +200,20 @@ class OpenAlexBot(BaseModel):
         #     print(cites_works)
         return cites_works
 
+    def __prepare_instance_of__(self, work: Work, reference: List[Claim]):
+        if (work, reference) is None:
+            raise ValueError("did not get what we need")
+        type_qid = WorkTypeToQid(work=work)
+        type_qid = type_qid.get_qid()
+        if type_qid is not None:
+            return datatypes.Item(
+                prop_nr=Property.INSTANCE_OF.value,
+                value=type_qid,
+                references=[reference]
+            )
+        else:
+            raise ValueError(f"type_qid was None")
+
     def __prepare_new_item__(
             self, doi: str, work: Work, wbi: WikibaseIntegrator
     ) -> entities.Item:
@@ -210,6 +227,8 @@ class OpenAlexBot(BaseModel):
         item.labels.set(detected_language, work.display_name)
         item.descriptions.set("en", f"scientific article from {work.publication_year}")
         # Prepare claims
+        # TODO convert redacted from OpenAlex work to claim
+        # TODO convert oa status from OpenAlex work to claim?
         # First prepare the reference needed in other claims
         reference = self.__prepare_reference_claim__(work=work)
         authors = self.__prepare_authors__(work=work)
@@ -221,40 +240,57 @@ class OpenAlexBot(BaseModel):
             item.add_claims(authors)
         if len(cites_works) > 0:
             item.add_claims(cites_works)
-        # TODO convert more data from OpenAlex work to claims
         item.add_claims(
-            self.__prepare_other_claims__(doi=doi, work=work, reference=reference),
+            self.__prepare_single_value_claims__(doi=doi, work=work, reference=reference),
         )
         if config.loglevel == logging.DEBUG:
             logger.debug("Printing the item json")
             print(item.get_json())
         return item
 
-    def __prepare_other_claims__(self, doi: str, work: Work, reference: List[Claim]):
+    def __prepare_published_in__(self, work: Work, reference: List[Claim]):
+        """This method performs entity linking between host_venue in OpenAlex and Wikidata
+        host_venues are often journals
+        """
+        if (work, reference) is None:
+            raise ValueError("did not get what we need")
+        logger.info("Getting Host Venue details from OA")
+        # Lookup using the ISSN-L e.g. https://api.openalex.org/works/doi:10.1016/j.eurpsy.2017.01.1921
+        # has 0924-9338
+        issn_l = work.host_venue.issn_l
+        if issn_l is None:
+            raise ValueError(f"issn_l of {work.id} was None")
+        result = self.__get_first_qid_from_cirrussearch__(f"haswbstatement:P7363={issn_l}")
+        if result is not None:
+            published_in = datatypes.Item(
+                prop_nr=Property.PUBLISHED_IN.value,
+                value=result,
+                references=[reference]
+            )
+            return published_in
+        else:
+            raise ValueError(f"Venue with ISSN-L {issn_l} not found in Wikidata")
+
+    def __prepare_single_value_claims__(self, doi: str, work: Work, reference: List[Claim]):
         if (work, doi, reference) is None:
             raise ValueError("did not get what we need")
         logger.info("Preparing other claims")
-        title = datatypes.MonolingualText(
-            prop_nr=Property.TITLE.value,
-            text=work.title,
-            language="en",
-            references=[reference]
-        )
         doi = datatypes.ExternalID(
             prop_nr=Property.DOI.value,
             value=doi.lower(),  # This is a community norm in Wikidata
             references=[reference]
         )
-        type_qid = WorkTypeToQid(work=work)
-        type_qid = type_qid.get_qid()
-        instance_of = datatypes.Item(
-            prop_nr=Property.INSTANCE_OF.value,
-            value=type_qid,
-            references=[reference]
-        )
+        instance_of = self.__prepare_instance_of__(work=work, reference=reference)
         publication_date = datatypes.Time(
             prop_nr=Property.PUBLICATION_DATE.value,
             time=datetime.strptime(work.publication_date, "%Y-%m-%d").strftime("+%Y-%m-%dT%H:%M:%SZ")
+        )
+        published_in = self.__prepare_published_in__(work=work, reference=reference)
+        title = datatypes.MonolingualText(
+            prop_nr=Property.TITLE.value,
+            text=work.title,
+            language="en",
+            references=[reference]
         )
         # DISABLED because OpenAlex does not have this information currently
         # language_of_work = datatypes.Item(
@@ -262,7 +298,6 @@ class OpenAlexBot(BaseModel):
         #     value=,
         #     references=[]
         # )
-        self.__prepare_authors__(work=work)
         if work.biblio.issue is not None:
             issue = datatypes.String(
                 prop_nr=Property.ISSUE.value,
@@ -271,7 +306,14 @@ class OpenAlexBot(BaseModel):
         else:
             issue = None
         list_of_claims = []
-        for claim in (doi, instance_of, title, publication_date, issue):
+        for claim in (
+                doi,
+                instance_of,
+                issue,
+                publication_date,
+                published_in,
+                title,
+        ):
             if claim is not None:
                 list_of_claims.append(claim)
         if len(list_of_claims) > 0:
