@@ -115,81 +115,6 @@ class OpenAlexBot(BaseModel):
             raise ValueError("Did not get what we need")
         self.__upload_new_item__(item=self.__prepare_new_item__(doi=doi, work=work, wbi=wbi))
 
-    def __prepare_cites_works__(self, work: Work, reference: List[Claim]):
-        if (work, reference) is None:
-            raise ValueError("did not get what we need")
-        logger.info("Preparing cites works claims")
-        oa = OpenAlex(email=self.email)
-        cites_works: List[datatypes.Item] = []
-        for referenced_work_url in work.referenced_works:
-            referenced_work = oa.get_single_work(referenced_work_url)
-            # print(referenced_work.dict())
-            doi = referenced_work.ids.doi_id
-            if doi is not None:
-                if self.__found_using_cirrussearch__(doi):
-                    qid = self.__get_first_qid_from_cirrussearch__(doi)
-                    logger.info(f"qid found for this reference: {qid}")
-                    # exit()
-                    cites_work = datatypes.Item(
-                        prop_nr=Property.CITES_WORK.value,
-                        value=qid,
-                        references=[reference]
-                    )
-                    cites_works.append(
-                        cites_work
-                    )
-                else:
-                    # TODO decide whether to import transitive references also
-                    logger.warning(f"Reference DOI '{doi}' not found in Wikidata")
-            else:
-                # TODO decide whether to import these
-                logger.warning(f"DOI was None for OpenAlex ID {referenced_work_url} "
-                               f"with ids {referenced_work.ids}, skipping")
-        logger.debug(f"Generated {len(cites_works)} cited works")
-        # if config.loglevel == logging.DEBUG:
-        #     print(cites_works)
-        return cites_works
-
-    @staticmethod
-    def __prepare_reference_claim__(id: str = None, work: Work = None) -> List[Claim]:
-        if work is None:
-            raise ValueError("did not get what we need")
-        logger.info("Preparing reference claim")
-        # Prepare reference
-        if id is not None:
-            id_without_prefix = URL(id).path_segment(0)
-            logger.info(f"Using OpenAlex id: {id_without_prefix} extracted from {id}")
-            openalex_id = datatypes.ExternalID(
-                prop_nr=Property.OPENALEX_ID.value,
-                value=id_without_prefix
-            )
-        else:
-            # Fallback to the work id as id
-            logger.info(f"Using OpenAlex id: {work.id_without_prefix}")
-            openalex_id = datatypes.ExternalID(
-                prop_nr=Property.OPENALEX_ID.value,
-                value=work.id_without_prefix
-            )
-        retrieved_date = datatypes.Time(
-            prop_nr="P813",  # Fetched today
-            time=datetime.utcnow().replace(
-                tzinfo=timezone.utc
-            ).replace(
-                hour=0,
-                minute=0,
-                second=0,
-            ).strftime("+%Y-%m-%dT%H:%M:%SZ")
-        )
-        stated_in = datatypes.Item(
-            prop_nr="P248",
-            value=StatedIn.OPENALEX.value
-        )
-        claims = []
-        for claim in (retrieved_date, stated_in, openalex_id):
-            if claim is not None:
-                claims.append(claim)
-        return claims
-
     def __prepare_authors__(self, work: Work) -> Optional[List[Claim]]:
         """
         This method prepares the author claims.
@@ -237,25 +162,73 @@ class OpenAlexBot(BaseModel):
                 ordinal += 1
         return authors
 
-    def __prepare_subjects__(self, work: Work) -> Optional[List[Claim]]:
-        """This method prepares the concept aka main subject claims."""
-        if work is None:
+    def __prepare_cites_works__(self, work: Work, reference: List[Claim]):
+        if (work, reference) is None:
             raise ValueError("did not get what we need")
-        logger.info("Preparing subject claims")
-        subjects = []
-        for concept in work.concepts:
-            if concept.wikidata_id is not None:
-                qid = concept.wikidata_id
-                label = concept.display_name
-                id = concept.id
-                logger.info(f"Found concept with name '{label}' and wikidata id '{qid}'")
-                subject = datatypes.Item(
-                    prop_nr=Property.MAIN_SUBJECT.value,
-                    value=qid,
-                    references=[self.__prepare_reference_claim__(id=id, work=work)]
-                )
-                subjects.append(subject)
-        return subjects
+        logger.info("Preparing cites works claims")
+        oa = OpenAlex(email=self.email)
+        cites_works: List[datatypes.Item] = []
+        for referenced_work_url in work.referenced_works:
+            referenced_work = oa.get_single_work(referenced_work_url)
+            # print(referenced_work.dict())
+            doi = referenced_work.ids.doi_id
+            if doi is not None:
+                if self.__found_using_cirrussearch__(doi):
+                    qid = self.__get_first_qid_from_cirrussearch__(doi)
+                    logger.info(f"qid found for this reference: {qid}")
+                    # exit()
+                    cites_work = datatypes.Item(
+                        prop_nr=Property.CITES_WORK.value,
+                        value=qid,
+                        references=[reference]
+                    )
+                    cites_works.append(
+                        cites_work
+                    )
+                else:
+                    # TODO decide whether to import transitive references also
+                    logger.warning(f"Reference DOI '{doi}' not found in Wikidata")
+            else:
+                # TODO decide whether to import these
+                logger.warning(f"DOI was None for OpenAlex ID {referenced_work_url} "
+                               f"with ids {referenced_work.ids}, skipping")
+        logger.debug(f"Generated {len(cites_works)} cited works")
+        # if config.loglevel == logging.DEBUG:
+        #     print(cites_works)
+        return cites_works
+
+    def __prepare_new_item__(
+            self, doi: str, work: Work, wbi: WikibaseIntegrator
+    ) -> entities.Item:
+        """This method converts OpenAlex data into a new Wikidata item"""
+        if (doi, work, wbi) is None:
+            raise ValueError("Did not get what we need")
+        # TODO language of display name using langdetect and set dynamically
+        detected_language = langdetect.detect(work.display_name)
+        logger.info(f"Detected language {detected_language} for '{work.display_name}'")
+        item = wbi.item.new()
+        item.labels.set(detected_language, work.display_name)
+        item.descriptions.set("en", f"scientific article from {work.publication_year}")
+        # Prepare claims
+        # First prepare the reference needed in other claims
+        reference = self.__prepare_reference_claim__(work=work)
+        authors = self.__prepare_authors__(work=work)
+        cites_works = self.__prepare_cites_works__(work=work, reference=reference)
+        subjects = self.__prepare_subjects__(work=work)
+        if len(subjects) > 0:
+            item.add_claims(subjects)
+        if len(authors) > 0:
+            item.add_claims(authors)
+        if len(cites_works) > 0:
+            item.add_claims(cites_works)
+        # TODO convert more data from OpenAlex work to claims
+        item.add_claims(
+            self.__prepare_other_claims__(doi=doi, work=work, reference=reference),
+        )
+        if config.loglevel == logging.DEBUG:
+            logger.debug("Printing the item json")
+            print(item.get_json())
+        return item
 
     def __prepare_other_claims__(self, doi: str, work: Work, reference: List[Claim]):
         if (work, doi, reference) is None:
@@ -306,38 +279,65 @@ class OpenAlexBot(BaseModel):
         else:
             return None
 
-    def __prepare_new_item__(
-            self, doi: str, work: Work, wbi: WikibaseIntegrator
-    ) -> entities.Item:
-        """This method converts OpenAlex data into a new Wikidata item"""
-        if (doi, work, wbi) is None:
-            raise ValueError("Did not get what we need")
-        # TODO language of display name using langdetect and set dynamically
-        detected_language = langdetect.detect(work.display_name)
-        logger.info(f"Detected language {detected_language} for '{work.display_name}'")
-        item = wbi.item.new()
-        item.labels.set(detected_language, work.display_name)
-        item.descriptions.set("en", f"scientific article from {work.publication_year}")
-        # Prepare claims
-        # First prepare the reference needed in other claims
-        reference = self.__prepare_reference_claim__(work=work)
-        authors = self.__prepare_authors__(work=work)
-        cites_works = self.__prepare_cites_works__(work=work, reference=reference)
-        subjects = self.__prepare_subjects__(work=work)
-        if len(subjects) > 0:
-            item.add_claims(subjects)
-        if len(authors) > 0:
-            item.add_claims(authors)
-        if len(cites_works) > 0:
-            item.add_claims(cites_works)
-        # TODO convert more data from OpenAlex work to claims
-        item.add_claims(
-            self.__prepare_other_claims__(doi=doi, work=work, reference=reference),
+    @staticmethod
+    def __prepare_reference_claim__(id: str = None, work: Work = None) -> List[Claim]:
+        if work is None:
+            raise ValueError("did not get what we need")
+        logger.info("Preparing reference claim")
+        # Prepare reference
+        if id is not None:
+            id_without_prefix = URL(id).path_segment(0)
+            logger.info(f"Using OpenAlex id: {id_without_prefix} extracted from {id}")
+            openalex_id = datatypes.ExternalID(
+                prop_nr=Property.OPENALEX_ID.value,
+                value=id_without_prefix
+            )
+        else:
+            # Fallback to the work id as id
+            logger.info(f"Using OpenAlex id: {work.id_without_prefix}")
+            openalex_id = datatypes.ExternalID(
+                prop_nr=Property.OPENALEX_ID.value,
+                value=work.id_without_prefix
+            )
+        retrieved_date = datatypes.Time(
+            prop_nr="P813",  # Fetched today
+            time=datetime.utcnow().replace(
+                tzinfo=timezone.utc
+            ).replace(
+                hour=0,
+                minute=0,
+                second=0,
+            ).strftime("+%Y-%m-%dT%H:%M:%SZ")
         )
-        if config.loglevel == logging.DEBUG:
-            logger.debug("Printing the item json")
-            print(item.get_json())
-        return item
+        stated_in = datatypes.Item(
+            prop_nr="P248",
+            value=StatedIn.OPENALEX.value
+        )
+        claims = []
+        for claim in (retrieved_date, stated_in, openalex_id):
+            if claim is not None:
+                claims.append(claim)
+        return claims
+
+    def __prepare_subjects__(self, work: Work) -> Optional[List[Claim]]:
+        """This method prepares the concept aka main subject claims."""
+        if work is None:
+            raise ValueError("did not get what we need")
+        logger.info("Preparing subject claims")
+        subjects = []
+        for concept in work.concepts:
+            if concept.wikidata_id is not None:
+                qid = concept.wikidata_id
+                label = concept.display_name
+                id = concept.id
+                logger.info(f"Found concept with name '{label}' and wikidata id '{qid}'")
+                subject = datatypes.Item(
+                    prop_nr=Property.MAIN_SUBJECT.value,
+                    value=qid,
+                    references=[self.__prepare_reference_claim__(id=id, work=work)]
+                )
+                subjects.append(subject)
+        return subjects
 
     def __process_dois__(self):
         if self.email is None:
