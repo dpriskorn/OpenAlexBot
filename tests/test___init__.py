@@ -1,42 +1,57 @@
 # import json
 from unittest import TestCase
 
-# from openalexapi import Work
-# from wikibaseintegrator import WikibaseIntegrator
+from pydantic import ValidationError
 
 from openalexbot import OpenAlexBot
 
 
+# from openalexapi import Work
+# from wikibaseintegrator import WikibaseIntegrator
+
+
 class TestOpenAlexBot(TestCase):
     def test_read_csv_no_doi_column_upper(self):
-        oab = OpenAlexBot(filename="test_data/test_doi_uppercase.csv")
+        oab = OpenAlexBot(email="test@example.com", filename="test_data/test_doi_uppercase.csv")
         oab.__read_csv__()
+        oab.__drop_empty_values__()
         with self.assertRaises(ValueError):
-            oab.__check_and_extract_from_doi_series__()
+            oab.__unquote_dois__()
 
     def test_read_csv_no_doi_column_lower(self):
-        oab = OpenAlexBot(filename="test_data/test_doi_lowercase.csv")
+        oab = OpenAlexBot(email="test@example.com", filename="test_data/test_doi_lowercase.csv")
         oab.__read_csv__()
+        oab.__drop_empty_values__()
+        oab.__unquote_dois__()
         oab.__check_and_extract_from_doi_series__()
         if len(oab.dois) != 1:
             self.fail()
 
     def test_found_using_cirrussearch_true(self):
-        oab = OpenAlexBot(filename="test_data/test_doi_lowercase.csv")
+        oab = OpenAlexBot(email="test@example.com", filename="test_data/test_doi_lowercase.csv")
         result = oab.__found_using_cirrussearch__(doi="10.7717/peerj.4375")
         if not result:
             self.fail()
 
     def test_found_using_cirrussearch_false(self):
-        oab = OpenAlexBot(filename="test_data/test_doi_lowercase.csv")
+        oab = OpenAlexBot(email="test@example.com", filename="test_data/test_doi_lowercase.csv")
         result = oab.__found_using_cirrussearch__(doi="xxx10.7717/peerj.4375xxx")
         if result:
             self.fail()
 
-    def test_import(self):
-        oa = OpenAlexBot(filename="test_data/10_dois.csv")
-        oa.start()
+    def test_import_without_email(self):
+        with self.assertRaises(ValidationError):
+            oa = OpenAlexBot(filename="test_data/10_dois.csv")
 
+    def test_import_with_invalid_email(self):
+        with self.assertRaises(ValidationError):
+            oa = OpenAlexBot(email=1, filename="test_data/10_dois.csv")
+
+
+    def test_import_with_valid_email(self):
+        oa = OpenAlexBot(email="test@example.com", filename="test_data/10_dois.csv")
+
+        # oa.start()
 #     def test__prepare_new_item__(self):
 #         oab = OpenAlexBot(filename="test_data/test.csv")
 #         test_json = json.loads("""

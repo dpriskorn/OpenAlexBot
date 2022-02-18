@@ -8,7 +8,7 @@ import pandas as pd  # type: ignore
 from openalexapi import OpenAlex, Work
 from pandas import DataFrame, Series  # type: ignore
 from purl import URL  # type: ignore
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from rich import print
 from wikibaseintegrator import WikibaseIntegrator, wbi_config, wbi_login, entities
 from wikibaseintegrator import datatypes
@@ -31,7 +31,7 @@ class OpenAlexBot(BaseModel):
     """
     dataframe: Optional[DataFrame]
     dois: Optional[Set[str]]
-    email: Optional[str]
+    email: EmailStr
     filename: str
     doi_series: Optional[Series]
 
@@ -46,11 +46,13 @@ class OpenAlexBot(BaseModel):
             self.doi_series = self.dataframe['doi'].transform(lambda x: unquote(x))
             if config.loglevel == logging.DEBUG:
                 self.doi_series.info()
-                self.doi_series.sample(20)
+                # self.doi_series.sample(5)
         else:
             raise ValueError(f"No 'doi' column found in {self.filename}")
 
     def __check_and_extract_from_doi_series__(self):
+        if self.doi_series is None:
+            raise ValueError(f"doi_series was None")
         if len(self.doi_series) > 0:
             dois: List[str] = self.dataframe["doi"].values
             self.dois = set(dois)
