@@ -347,14 +347,32 @@ class OpenAlexBot(BaseModel):
             )
         else:
             issue = None
+        if work.biblio.volume is not None:
+            volume = datatypes.String(
+                prop_nr=Property.VOLUME.value,
+                value=work.biblio.volume,
+                references=[reference]
+            )
+        else:
+            volume = None
+        if work.biblio.first_page is not None and work.biblio.last_page is not None:
+            pages = datatypes.String(
+                prop_nr=Property.PAGES.value,
+                value=f"{work.biblio.first_page}-{work.biblio.last_page}",
+                references=[reference]
+            )
+        else:
+            pages = None
         list_of_claims = []
         for claim in (
                 doi,
                 instance_of,
                 issue,
+                pages,
                 publication_date,
                 published_in,
                 title,
+                volume,
         ):
             if claim is not None:
                 list_of_claims.append(claim)
